@@ -60,6 +60,54 @@ while (running) {
 drmDeinit(&drm_ctx);
 ```
 
+## C++ 里怎么调用
+
+头文件已经支持 C++，内部用 `extern "C"` 包住了接口声明，所以 `.cpp`
+文件可以直接包含：
+
+```cpp
+#include "drm_display.h"
+
+int main()
+{
+    DRM_Ctx ctx {};
+
+    if (drmInit(&ctx) != 0) {
+        return -1;
+    }
+
+    DRM_Display_Config cfg {};
+    cfg.fmt = DRM_FORMAT_XRGB8888;
+    cfg.mode_index = -1;
+    cfg.src_w = 1920;
+    cfg.src_h = 1080;
+    cfg.crtc_w = 1920;
+    cfg.crtc_h = 1080;
+
+    drmDisplaySetupConfig(&ctx, &cfg);
+
+    DRM_Buf buf {};
+    buf.dma_fd = dma_fd;
+    buf.w = 1920;
+    buf.h = 1080;
+    buf.fmt = DRM_FORMAT_XRGB8888;
+    buf.pitches[0] = stride;
+    buf.modifier = DRM_FORMAT_MOD_INVALID;
+
+    drmDisplaySubmit(&ctx, &buf);
+    drmDeinit(&ctx);
+    return 0;
+}
+```
+
+如果你的 C++ 工程单独编译这个模块，推荐保持：
+
+```text
+drm_display.c 用 C 编译器编译
+C++ 业务代码用 C++ 编译器编译
+最后一起链接 libdrm
+```
+
 ## 你真正需要关心的 3 个结构体
 
 ### DRM_Ctx

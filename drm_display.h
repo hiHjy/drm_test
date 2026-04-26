@@ -22,6 +22,10 @@
 #define DRM_MAX_POSSIBLE_IDS    8
 #define FB_COUNT                3
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * 外部传入的一帧图像。
  *
@@ -511,5 +515,9 @@ int drmDisplaySubmit(DRM_Ctx *ctx, const DRM_Buf *buf);
  * 返回：poll/drmHandleEvent 的返回值；0 表示超时。
  */
 int drmHandleEvents(DRM_Ctx *ctx, int timeout_ms);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
