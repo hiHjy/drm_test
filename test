@@ -1,0 +1,113 @@
+
+#include "drm_display.h"
+#include <sys/mman.h>
+int main(int argc, char const *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    DRM_Ctx drm_ctx;
+
+    if (drmInit(&drm_ctx) != 0) {
+        return 1;
+    }
+
+    drmDumpResources(&drm_ctx);
+
+    int conn_index = -1;
+    for (int i = 0; i < drm_ctx.res.connector_count; i++) {
+        if (drm_ctx.res.connector_infos[i].connected &&
+            drm_ctx.res.connector_infos[i].mode_count > 0) {
+            conn_index = i;
+            break;
+        }
+    }
+
+    if (conn_index < 0) {
+        printf("no connected connector with modes\n");
+        drmDeinit(&drm_ctx);
+        return 1;
+    }
+
+    uint32_t conn_id = drm_ctx.res.connector_infos[conn_index].id;
+    uint32_t crtc_id = drm_ctx.res.crtc_infos[0].id;
+
+    struct drm_mode_create_dumb create = {
+        .width = 1920,           // 宽度
+        .height = 1080,          // 高度
+        .bpp = 24,               // 每像素位数
+        .flags = 0
+    };
+    int ret = drmIoctl(drm_ctx.drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &create);
+    if (ret < 0) {
+        perror("drmIoctl CREATE_DUMB");
+        close(drm_ctx.drm_fd);
+        return -1;
+    }
+
+    printf("DUMB buffer created:\n");
+    printf("  handle: %u\n", create.handle);
+    printf("  pitch: %u\n", create.pitch);
+    printf("  size: %llu\n", (unsigned long long)create.size);
+
+
+
+    uint32_t fb_id = 0;  // 这里会存放新分配的 fb_id
+    
+    ret = drmModeAddFB(drm_ctx.drm_fd, 
+                       create.width,      // 宽度
+                       create.height,     // 高度
+                       24,                // depth（颜色深度）
+                       24,                // bpp（每像素位数）
+                       create.pitch,      // 每行字节数
+                       create.handle,     // 上一步得到的 handle
+                       &fb_id);           // 输出：新分配的 fb_id（注意传指针）
+    
+    if (ret < 0) {
+        perror("drmModeAddFB");
+        close(drm_ctx.drm_fd);
+        return -1;
+    }
+    printf("fb_id = %d\n", fb_id);
+    drmModeFB *fb = drmModeGetFB(drm_ctx.drm_fd, fb_id);
+    if (!fb)
+        return -1;
+  
+   
+    int dma_fd;
+    ret = drmPrimeHandleToFD(
+        drm_ctx.drm_fd,
+        fb->handle,  // 第一个平面（RGB都是平面0）
+        DRM_CLOEXEC | DRM_RDWR,  // 可读写
+        &dma_fd
+    );
+    if (ret < 0) {
+        printf("drmPrimeHandleToFD 失败\n");
+        drmModeFreeFB(fb);
+        return -1;
+    }
+    printf("dma-fd = %d\n", dma_fd);
+    
+    uint8_t *p = mmap(NULL, create.size, PROT_READ | PROT_WRITE,  MAP_SHARED, dma_fd, 0);
+    if (!p ) {
+        printf("mman error\n");
+        return -1;
+    }
+  
+    drmModeModeInfo mode = drm_ctx.res.connector_infos[conn_index].drm_mode_infos[0].raw;
+
+    if (fb_id == 0) {
+        printf("current crtc has no fb, create dumb buffer first\n");
+        drmDeinit(&drm_ctx);
+        return 1;
+    }
+
+    if (drmModeSetCrtc(drm_ctx.drm_fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode) != 0) {
+        perror("drmModeSetCrtc");
+    }
+    memset(p, 124, create.size);
+
+    sleep(5);
+    drmDeinit(&drm_ctx);
+    return 0;
+}
